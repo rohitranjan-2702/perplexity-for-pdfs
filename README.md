@@ -3,6 +3,7 @@
 - Run redis locally - `docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack`
 - Install dependencies - `pnpm install`
 - Run search service - `pnpm run search`
+- Type your query
 
 ## Features
 
