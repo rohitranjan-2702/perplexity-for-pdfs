@@ -57,33 +57,27 @@ export class PDFProcessor {
     this.ocrWorker = await createWorker("eng");
   }
 
-  public async processPdf(pdfUrl: string, query: string): Promise<any[]> {
+  public async processPdf(
+    pdfUrl: string,
+    query: string,
+    semanticQueryKey: string
+  ): Promise<any[]> {
     // check if query is cached
-    const queryCacheKey = createSemanticCacheKey(query);
-    const queryCache = await redis.get(queryCacheKey);
+    const queryCache = await redis.get(semanticQueryKey);
     // assuming that the pdfs are not changed (we can adjust ttl if needed), we can return the cached query
     if (queryCache) {
-      console.log(`[PDF-PROCESSOR] cache hit ${queryCacheKey}`);
+      console.log(`[PDF-PROCESSOR] cache hit ${semanticQueryKey}`);
       return JSON.parse(queryCache);
     }
 
     console.log(
-      `[PDF-PROCESSOR] processing query ${query}, new semantic cache key ${queryCacheKey} created`
+      `[PDF-PROCESSOR] processing query ${query}, new semantic cache key ${semanticQueryKey} created`
     );
 
     // check if pdf is there in pinecone -> this will help us not process the same pdf again
     const pdfEmbedding = await this.retrievePdfEmbeddings(pdfUrl, query);
     if (pdfEmbedding.length > 0) {
       console.log(`[PDF-PROCESSOR] docs found in pinecone ${pdfUrl}`);
-
-      void Promise.all([
-        redis.set(
-          queryCacheKey,
-          JSON.stringify(pdfEmbedding),
-          "EX",
-          cacheConfig.query.ttl
-        ),
-      ]);
 
       return pdfEmbedding;
     }
@@ -93,15 +87,7 @@ export class PDFProcessor {
     const relevantPages = await this.findRelevantPages(docs, query, pdfUrl);
 
     // Store pdf embeddings in pinecone and cache query in redis asynchronously
-    void Promise.all([
-      this.storePdfEmbeddings(pdfUrl, docs),
-      redis.set(
-        queryCacheKey,
-        JSON.stringify(relevantPages),
-        "EX",
-        cacheConfig.query.ttl
-      ),
-    ]);
+    void Promise.all([this.storePdfEmbeddings(pdfUrl, docs)]);
 
     return relevantPages;
   }

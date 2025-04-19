@@ -2,6 +2,9 @@ import dotenv from "dotenv";
 import { GoogleSearchAPI } from "./google-search";
 import readline from "readline";
 import { PDFProcessor } from "./pdf-processor";
+import { createSemanticCacheKey } from "./utils";
+import { redis } from "./redis-client";
+import { cacheConfig } from "./constants";
 
 dotenv.config();
 
@@ -23,19 +26,31 @@ async function processQuery(query: string) {
     snippet: pdf.snippet,
   }));
 
+  const semanticQueryKey = createSemanticCacheKey(query);
+
   console.log(`Processing ${pdfs.length} PDFs`);
 
   // TODO: save query and pdfs to db
 
   const pdfProcessor = new PDFProcessor();
   const results = await Promise.all(
-    pdfs.map((pdf) => pdfProcessor.processPdf(pdf.url, query))
+    pdfs.map((pdf) => pdfProcessor.processPdf(pdf.url, query, semanticQueryKey))
   );
+
+  // store results in redis and cleanup memory
+  Promise.all([
+    redis.set(
+      semanticQueryKey,
+      JSON.stringify(results),
+      "EX",
+      cacheConfig.query.ttl
+    ),
+    pdfProcessor.cleanupMemory(),
+  ]);
+
   console.log(results.length);
   const docs = results.flat();
   console.log(docs);
-
-  await pdfProcessor.cleanupMemory();
 }
 
 async function searchAndValidatePDFs(query: string) {
