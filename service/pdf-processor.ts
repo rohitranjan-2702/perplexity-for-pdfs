@@ -36,6 +36,13 @@ interface PageData {
   vector: number[] | null;
 }
 
+interface PDF {
+  url: string;
+  title: string;
+  snippet: string;
+  thumbnail: string;
+}
+
 // Initialize Pinecone client
 const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY || "",
@@ -57,39 +64,44 @@ export class PDFProcessor {
     this.ocrWorker = await createWorker("eng");
   }
 
-  public async processPdf(
-    pdfUrl: string,
-    query: string,
-    semanticQueryKey: string
+  private async serializeDocuments(
+    documents: [Document, number][],
+    pdf: PDF
   ): Promise<any[]> {
-    // check if query is cached
-    const queryCache = await redis.get(semanticQueryKey);
-    // assuming that the pdfs are not changed (we can adjust ttl if needed), we can return the cached query
-    if (queryCache) {
-      console.log(`[PDF-PROCESSOR] cache hit ${semanticQueryKey}`);
-      return JSON.parse(queryCache);
-    }
+    return documents.map(([doc, score]) => ({
+      pageContent: doc.pageContent,
+      metadata: {
+        "loc.lines.from": doc.metadata["loc.lines.from"],
+        "loc.lines.to": doc.metadata["loc.lines.to"],
+        "loc.pageNumber": doc.metadata["loc.pageNumber"],
+        "pdf.totalPages": doc.metadata["pdf.totalPages"],
+        pdfUrl: doc.metadata["pdfUrl"],
+        source: doc.metadata["source"],
+      },
+      score: score,
+      thumbnail: pdf.thumbnail,
+      title: pdf.title,
+      snippet: pdf.snippet,
+    }));
+  }
 
-    console.log(
-      `[PDF-PROCESSOR] processing query ${query}, new semantic cache key ${semanticQueryKey} created`
-    );
-
+  public async processPdf(pdf: PDF, query: string): Promise<any[]> {
     // check if pdf is there in pinecone -> this will help us not process the same pdf again
-    const pdfEmbedding = await this.retrievePdfEmbeddings(pdfUrl, query);
+    const pdfEmbedding = await this.retrievePdfEmbeddings(pdf.url, query);
     if (pdfEmbedding.length > 0) {
-      console.log(`[PDF-PROCESSOR] docs found in pinecone ${pdfUrl}`);
+      console.log(`[PDF-PROCESSOR] docs found in pinecone ${pdf.url}`);
 
-      return pdfEmbedding;
+      return this.serializeDocuments(pdfEmbedding, pdf);
     }
 
     // load pdf from url
-    const docs = await this.loadPdfFromUrl(pdfUrl);
-    const relevantPages = await this.findRelevantPages(docs, query, pdfUrl);
+    const docs = await this.loadPdfFromUrl(pdf.url);
+    const relevantPages = await this.findRelevantPages(docs, query, pdf.url);
 
     // Store pdf embeddings in pinecone and cache query in redis asynchronously
-    void Promise.all([this.storePdfEmbeddings(pdfUrl, docs)]);
+    void Promise.all([this.storePdfEmbeddings(pdf.url, docs)]);
 
-    return relevantPages;
+    return this.serializeDocuments(relevantPages, pdf);
   }
 
   public async loadPdfFromUrl(pdfUrl: string): Promise<Document[]> {
@@ -180,7 +192,7 @@ export class PDFProcessor {
     documents: Document[],
     query: string,
     pdfUrl: string
-  ): Promise<any[]> {
+  ): Promise<[Document<Record<string, any>>, number][]> {
     try {
       // store pdf embeddings in memory
       await this.storePdfEmbeddings(pdfUrl, documents, true);
@@ -279,7 +291,7 @@ export class PDFProcessor {
     pdfUrl: string,
     query: string,
     storeInMemory: boolean = false
-  ): Promise<Document[] | [Document, number][]> {
+  ): Promise<[Document, number][]> {
     try {
       // Setup metadata filtering for the URL
       const filter = {

@@ -13,20 +13,27 @@ const googleSearchAPI = new GoogleSearchAPI(
   process.env.GOOGLE_SEARCH_ENGINE_ID
 );
 
-async function processQuery(query: string) {
+async function processQuery(query: string): Promise<any[]> {
   const validPDFs = await searchAndValidatePDFs(query);
   if (!validPDFs) {
     console.log("No valid PDFs found");
-    return;
+    return [];
   }
 
   const pdfs = validPDFs.map((pdf) => ({
     url: pdf.link,
     title: pdf.title,
     snippet: pdf.snippet,
+    thumbnail: pdf.pagemap?.cse_thumbnail?.[0]?.src ?? "",
   }));
 
   const semanticQueryKey = createSemanticCacheKey(query);
+  const queryCache = await redis.get(semanticQueryKey);
+  // assuming that the pdfs are not changed (we can adjust ttl if needed), we can return the cached query
+  if (queryCache) {
+    console.log(`cache hit ${semanticQueryKey}`);
+    return JSON.parse(queryCache);
+  }
 
   console.log(`Processing ${pdfs.length} PDFs`);
 
@@ -34,11 +41,12 @@ async function processQuery(query: string) {
 
   const pdfProcessor = new PDFProcessor();
   const results = await Promise.all(
-    pdfs.map((pdf) => pdfProcessor.processPdf(pdf.url, query, semanticQueryKey))
+    pdfs.map((pdf) => pdfProcessor.processPdf(pdf, query))
   );
 
   // store results in redis and cleanup memory
   Promise.all([
+    console.log(`caching query ${semanticQueryKey}`),
     redis.set(
       semanticQueryKey,
       JSON.stringify(results),
@@ -48,10 +56,7 @@ async function processQuery(query: string) {
     pdfProcessor.cleanupMemory(),
   ]);
 
-  console.log(results.length);
-  const docs = results.flat();
-  console.log(docs);
-  process.exit(0);
+  return results;
 }
 
 async function searchAndValidatePDFs(query: string) {
@@ -86,11 +91,15 @@ async function main(): Promise<void> {
   const query = await getUserQuery();
 
   const start = Date.now();
-  await processQuery(query);
+  const results = await processQuery(query);
   const end = Date.now();
+  console.log(results.flat());
+
   console.log(`Time taken: ${end - start}ms`);
+  process.exit(0);
 }
 
+// what is binary search?
 main().catch((error) => {
   console.error("Error:", error);
 });

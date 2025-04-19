@@ -23,3 +23,8 @@
 ![Architecture Diagram](image.png)
 
 Refer to arch.excalidraw
+
+Aim was to
+
+- implement semantic caching to avoid redundant embedding generation for similar queries
+- leverage previously computed embeddings and vector representations for efficient retrieval
