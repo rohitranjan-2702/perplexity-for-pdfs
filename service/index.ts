@@ -51,6 +51,7 @@ async function processQuery(query: string) {
   console.log(results.length);
   const docs = results.flat();
   console.log(docs);
+  process.exit(0);
 }
 
 async function searchAndValidatePDFs(query: string) {
