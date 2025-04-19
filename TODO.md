@@ -1,0 +1,2 @@
+- google pdf search
+- in-memory vector store for first query
