@@ -3,7 +3,7 @@
 - Run redis locally - `docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack`
 - Install dependencies - `pnpm install`
 - Run search service - `pnpm run search`
-- Type your query and press Enter.
+- Type your query - `What is binary search?` and press Enter.
 - You will see the top relevant pages of the all 3 (for now) PDFs found on internet, in seconds.
 
 ## Features

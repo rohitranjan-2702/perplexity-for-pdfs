@@ -115,13 +115,7 @@ export class PDFProcessor {
     const docs = await this.loadPdfFromUrl(pdf.url);
     const relevantPages = await this.findRelevantPages(docs, query, pdf.url);
 
-    // Store pdf embeddings in pinecone asynchronously
-    this.storePdfEmbeddings(pdf.url, docs).catch((err) =>
-      console.error(
-        `[PDF-PROCESSOR] Failed to store embeddings for ${pdf.url}:`,
-        err
-      )
-    );
+    Promise.all([this.storePdfEmbeddings(pdf.url, docs)]);
 
     return this.serializeDocuments(relevantPages, pdf);
   }
@@ -148,13 +142,13 @@ export class PDFProcessor {
       }
 
       if (docs.length < 50) {
-        // Cache the processed documents
-        // await redis.set(
-        //   cacheKey,
-        //   JSON.stringify(docs),
-        //   "EX",
-        //   cacheConfig.pdf.ttl
-        // );
+        // Cache the small documents for future use
+        await redis.set(
+          cacheKey,
+          JSON.stringify(docs),
+          "EX",
+          cacheConfig.pdf.ttl
+        );
       }
 
       return docs;

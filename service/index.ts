@@ -60,19 +60,19 @@ async function processQuery(query: string): Promise<any[]> {
     pdfs.map((pdf) => pdfProcessor.processPdf(pdf, query))
   );
 
+  const serializedResults = results.map((result) => serializeResults(result));
+
   // store results in redis and cleanup memory
   Promise.all([
     console.log(`caching query ${semanticQueryKey}`),
     redis.set(
-      semanticQueryKey,
-      JSON.stringify(results),
+      `query:${semanticQueryKey}`,
+      JSON.stringify(serializedResults),
       "EX",
       cacheConfig.query.ttl
     ),
     pdfProcessor.cleanupMemory(),
   ]);
-
-  const serializedResults = results.map((result) => serializeResults(result));
 
   return serializedResults;
 }
@@ -136,7 +136,6 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-// what is binary search?
 main().catch((error) => {
   console.error("Error:", error);
 });
