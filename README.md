@@ -1,3 +1,7 @@
+# Demo Video
+
+Link: https://youtu.be/940dqc-l6eU
+
 # Run the search service
 
 - Run redis locally - `docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack`
