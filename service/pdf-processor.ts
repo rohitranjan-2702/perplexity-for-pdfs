@@ -36,6 +36,23 @@ interface PageData {
   vector: number[] | null;
 }
 
+export interface DocumentArray
+  extends Array<{
+    pageContent: string;
+    metadata: {
+      "loc.lines.from": number;
+      "loc.lines.to": number;
+      "loc.pageNumber": number;
+      "pdf.totalPages": number;
+      pdfUrl: string;
+      source: string;
+    };
+    score: number;
+    thumbnail: string;
+    title: string;
+    snippet: string;
+  }> {}
+
 interface PDF {
   url: string;
   title: string;
@@ -67,16 +84,16 @@ export class PDFProcessor {
   private async serializeDocuments(
     documents: [Document, number][],
     pdf: PDF
-  ): Promise<any[]> {
+  ): Promise<DocumentArray> {
     return documents.map(([doc, score]) => ({
       pageContent: doc.pageContent,
       metadata: {
-        "loc.lines.from": doc.metadata["loc.lines.from"],
-        "loc.lines.to": doc.metadata["loc.lines.to"],
-        "loc.pageNumber": doc.metadata["loc.pageNumber"],
-        "pdf.totalPages": doc.metadata["pdf.totalPages"],
-        pdfUrl: doc.metadata["pdfUrl"],
-        source: doc.metadata["source"],
+        "loc.lines.from": doc.metadata.loc.lines.from,
+        "loc.lines.to": doc.metadata.loc.lines.to,
+        "loc.pageNumber": doc.metadata.loc.pageNumber,
+        "pdf.totalPages": doc.metadata.pdf.totalPages,
+        pdfUrl: doc.metadata.pdfUrl,
+        source: doc.metadata.source,
       },
       score: score,
       thumbnail: pdf.thumbnail,
@@ -85,7 +102,7 @@ export class PDFProcessor {
     }));
   }
 
-  public async processPdf(pdf: PDF, query: string): Promise<any[]> {
+  public async processPdf(pdf: PDF, query: string): Promise<DocumentArray> {
     // check if pdf is there in pinecone -> this will help us not process the same pdf again
     const pdfEmbedding = await this.retrievePdfEmbeddings(pdf.url, query);
     if (pdfEmbedding.length > 0) {
@@ -98,31 +115,55 @@ export class PDFProcessor {
     const docs = await this.loadPdfFromUrl(pdf.url);
     const relevantPages = await this.findRelevantPages(docs, query, pdf.url);
 
-    // Store pdf embeddings in pinecone and cache query in redis asynchronously
-    void Promise.all([this.storePdfEmbeddings(pdf.url, docs)]);
+    // Store pdf embeddings in pinecone asynchronously
+    this.storePdfEmbeddings(pdf.url, docs).catch((err) =>
+      console.error(
+        `[PDF-PROCESSOR] Failed to store embeddings for ${pdf.url}:`,
+        err
+      )
+    );
 
     return this.serializeDocuments(relevantPages, pdf);
   }
 
   public async loadPdfFromUrl(pdfUrl: string): Promise<Document[]> {
-    const cacheKey = `pdf:${pdfUrl}`;
-    const cachedDocs = await redis.get(cacheKey);
+    try {
+      const cacheKey = `pdf:${pdfUrl}`;
+      const cachedDocs = await redis.get(cacheKey);
 
-    if (cachedDocs) {
-      console.log(`[PDF-PROCESSOR] cache hit ${cacheKey}`);
-      return JSON.parse(cachedDocs);
+      if (cachedDocs) {
+        console.log(`[PDF-PROCESSOR] cache hit ${cacheKey}`);
+        return JSON.parse(cachedDocs);
+      }
+
+      console.log(`[PDF-PROCESSOR] processing pdf ${pdfUrl}`);
+      const response = await fetch(pdfUrl);
+      const blob = await response.blob();
+      const loader = new WebPDFLoader(blob, {
+        splitPages: true,
+      });
+      const docs = await loader.load();
+      if (docs.length === 0) {
+        throw new Error(`Failed to load PDF from URL: ${pdfUrl}`);
+      }
+
+      if (docs.length < 50) {
+        // Cache the processed documents
+        // await redis.set(
+        //   cacheKey,
+        //   JSON.stringify(docs),
+        //   "EX",
+        //   cacheConfig.pdf.ttl
+        // );
+      }
+
+      return docs;
+    } catch (error: any) {
+      console.error(
+        `[PDF-PROCESSOR] Error loading PDF from URL: ${error.message}`
+      );
+      throw new Error(`Failed to load PDF from URL: ${error.message}`);
     }
-
-    console.log(`[PDF-PROCESSOR] processing pdf ${pdfUrl}`);
-    const response = await fetch(pdfUrl);
-    const blob = await response.blob();
-    const loader = new WebPDFLoader(blob);
-    const docs = await loader.load();
-
-    // Cache the processed documents
-    await redis.set(cacheKey, JSON.stringify(docs), "EX", cacheConfig.pdf.ttl);
-
-    return docs;
   }
 
   // TODO: ocr worker
@@ -194,6 +235,30 @@ export class PDFProcessor {
     pdfUrl: string
   ): Promise<[Document<Record<string, any>>, number][]> {
     try {
+      // process large pdfs in chunks
+      if (documents.length > 50) {
+        console.log(
+          `[PDF-PROCESSOR] processing large pdf ${pdfUrl} with ${documents.length} pages`
+        );
+
+        const chunks = [];
+        for (let i = 0; i < documents.length; i += 50) {
+          chunks.push(documents.slice(i, i + 50));
+        }
+
+        console.log(`[PDF-PROCESSOR] created ${chunks.length} chunks`);
+
+        const results: [Document<Record<string, any>>, number][] = [];
+        await Promise.all(
+          chunks.map(async (chunk) => {
+            // recursively process chunks
+            const result = await this.findRelevantPages(chunk, query, pdfUrl);
+            results.push(...result);
+          })
+        );
+        return results;
+      }
+
       // store pdf embeddings in memory
       await this.storePdfEmbeddings(pdfUrl, documents, true);
 
@@ -260,18 +325,20 @@ export class PDFProcessor {
 
       if (storeInMemory) {
         await memoryVectorStore.addDocuments(chunksWithMetadata);
+        console.log(
+          `[PDF-PROCESSOR] Successfully stored ${chunks.length} chunks for PDF: ${pdfUrl} in memory`
+        );
         return true;
       } else {
         await PineconeStore.fromDocuments(chunksWithMetadata, embeddings, {
           pineconeIndex,
           namespace: "pdf-documents",
         });
+        console.log(
+          `[PDF-PROCESSOR] Successfully stored ${chunks.length} chunks for PDF: ${pdfUrl} in pinecone`
+        );
+        return true;
       }
-
-      console.log(
-        `[PDF-PROCESSOR] Successfully stored ${chunks.length} chunks for PDF: ${pdfUrl}`
-      );
-      return true;
     } catch (error: any) {
       console.error(
         `[PDF-PROCESSOR] Error storing PDF embeddings in Pinecone:`,
@@ -299,6 +366,9 @@ export class PDFProcessor {
       };
 
       if (storeInMemory) {
+        console.log(
+          `[PDF-PROCESSOR] Retrieving PDF documents from memory for URL: ${pdfUrl}`
+        );
         return await memoryVectorStore.similaritySearchWithScore(
           query,
           5,

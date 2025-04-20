@@ -9,7 +9,7 @@ export const cacheConfig = {
     ttl: 3600,
   },
   similarity: {
-    score: 0.5,
+    score: 0.6, // 0.6 is the default score for similarity
   },
   page: {
     top: 5,

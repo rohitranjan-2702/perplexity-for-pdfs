@@ -1,10 +1,26 @@
 import dotenv from "dotenv";
 import { GoogleSearchAPI } from "./google-search";
 import readline from "readline";
-import { PDFProcessor } from "./pdf-processor";
+import { DocumentArray, PDFProcessor } from "./pdf-processor";
 import { createSemanticCacheKey } from "./utils";
 import { redis } from "./redis-client";
 import { cacheConfig } from "./constants";
+
+interface Result {
+  pdfUrl: string;
+  title: string;
+  snippet: string;
+  thumbnail: string;
+  relevantPages: {
+    pageNumber: number;
+    pageContent: string;
+    metadata: {
+      "loc.lines.from": number;
+      "loc.lines.to": number;
+      "loc.pageNumber": number;
+    };
+  }[];
+}
 
 dotenv.config();
 
@@ -12,6 +28,7 @@ const googleSearchAPI = new GoogleSearchAPI(
   process.env.GOOGLE_API_KEY!,
   process.env.GOOGLE_SEARCH_ENGINE_ID
 );
+const pdfProcessor = new PDFProcessor();
 
 async function processQuery(query: string): Promise<any[]> {
   const validPDFs = await searchAndValidatePDFs(query);
@@ -28,7 +45,7 @@ async function processQuery(query: string): Promise<any[]> {
   }));
 
   const semanticQueryKey = createSemanticCacheKey(query);
-  const queryCache = await redis.get(semanticQueryKey);
+  const queryCache = await redis.get(`query:${semanticQueryKey}`);
   // assuming that the pdfs are not changed (we can adjust ttl if needed), we can return the cached query
   if (queryCache) {
     console.log(`cache hit ${semanticQueryKey}`);
@@ -39,7 +56,6 @@ async function processQuery(query: string): Promise<any[]> {
 
   // TODO: save query and pdfs to db
 
-  const pdfProcessor = new PDFProcessor();
   const results = await Promise.all(
     pdfs.map((pdf) => pdfProcessor.processPdf(pdf, query))
   );
@@ -56,7 +72,29 @@ async function processQuery(query: string): Promise<any[]> {
     pdfProcessor.cleanupMemory(),
   ]);
 
-  return results;
+  const serializedResults = results.map((result) => serializeResults(result));
+
+  return serializedResults;
+}
+
+function serializeResults(results: DocumentArray): Result {
+  const relevantPages: Result["relevantPages"] = results
+    .map((result) => {
+      return {
+        pageNumber: result.metadata["loc.pageNumber"] as number,
+        pageContent: result.pageContent,
+        metadata: result.metadata,
+      };
+    })
+    .sort((a, b) => a.pageNumber - b.pageNumber);
+
+  return {
+    pdfUrl: results[0].metadata.pdfUrl,
+    title: results[0].title,
+    snippet: results[0].snippet,
+    thumbnail: results[0].thumbnail,
+    relevantPages,
+  };
 }
 
 async function searchAndValidatePDFs(query: string) {
@@ -93,8 +131,7 @@ async function main(): Promise<void> {
   const start = Date.now();
   const results = await processQuery(query);
   const end = Date.now();
-  console.log(results.flat());
-
+  console.log(results);
   console.log(`Time taken: ${end - start}ms`);
   process.exit(0);
 }
