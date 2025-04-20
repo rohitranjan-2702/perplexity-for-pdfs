@@ -10,8 +10,6 @@ export type SearchResultType = {
   };
 };
 
-// types/index.ts
-
 // Google Search API response interfaces
 export interface GoogleSearchResult {
   kind: string;
