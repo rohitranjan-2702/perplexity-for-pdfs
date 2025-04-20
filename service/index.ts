@@ -14,6 +14,7 @@ interface Result {
   relevantPages: {
     pageNumber: number;
     pageContent: string;
+    score: number;
     metadata: {
       "loc.lines.from": number;
       "loc.lines.to": number;
@@ -84,6 +85,7 @@ function serializeResults(results: DocumentArray): Result {
         pageNumber: result.metadata["loc.pageNumber"] as number,
         pageContent: result.pageContent,
         metadata: result.metadata,
+        score: result.score,
       };
     })
     .sort((a, b) => a.pageNumber - b.pageNumber);

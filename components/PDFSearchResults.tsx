@@ -5,7 +5,16 @@ interface PDFResultProps {
   url: string;
   snippet: string;
   totalPages?: number;
-  relevantPages?: { startPage: number; endPage: number };
+  relevantPages: {
+    pageNumber: number;
+    pageContent: string;
+    score: number;
+    metadata: {
+      "loc.lines.from": number;
+      "loc.lines.to": number;
+      "loc.pageNumber": number;
+    };
+  }[];
   thumbnail?: string;
 }
 
@@ -22,13 +31,15 @@ const PagesPill = ({ totalPages }: { totalPages: number }) => {
 const RelevancyInfo = ({
   totalPages,
   relevantPages,
+  pageNumbers,
 }: {
   totalPages?: number;
   relevantPages?: { startPage: number; endPage: number };
+  pageNumbers?: number[];
 }) => {
   if (!totalPages) return null;
 
-  if (!relevantPages) {
+  if (!relevantPages && !pageNumbers) {
     return (
       <div className="flex items-center gap-1 text-sm text-gray-500 mt-2">
         <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
@@ -37,17 +48,22 @@ const RelevancyInfo = ({
     );
   }
 
-  const range = relevantPages.endPage - relevantPages.startPage + 1;
-  if (range === totalPages) {
+  if (pageNumbers && pageNumbers.length > 0) {
+    const sortedPages = [...pageNumbers].sort((a, b) => a - b);
     return (
-      <div className="text-sm text-gray-500 mt-2">All pages are relevant</div>
+      <div className="text-sm text-gray-500 mt-2">
+        Relevant pages: {sortedPages.join(", ")}
+      </div>
     );
   }
 
+  const range = relevantPages
+    ? relevantPages.endPage - relevantPages.startPage + 1
+    : 0;
   return (
     <div className="text-sm text-gray-500 mt-2">
-      {range} relevant pages from page {relevantPages.startPage} -{" "}
-      {relevantPages.endPage}
+      {range} relevant pages from page {relevantPages?.startPage} -{" "}
+      {relevantPages?.endPage}
     </div>
   );
 };
@@ -62,6 +78,21 @@ const PDFResult = ({
 }: PDFResultProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [thumbnailError, setThumbnailError] = useState(false);
+
+  // Calculate startPage and endPage from relevantPages array
+  const derivedRelevancy = relevantPages?.length
+    ? {
+        startPage: Math.min(...relevantPages.map((page) => page.pageNumber)),
+        endPage: Math.max(...relevantPages.map((page) => page.pageNumber)),
+      }
+    : undefined;
+
+  // Get exact page numbers for display
+  const pageNumbers = relevantPages?.length
+    ? Array.from(new Set(relevantPages.map((page) => page.pageNumber))).sort(
+        (a, b) => a - b
+      )
+    : undefined;
 
   // Generate a thumbnail based on PDF URL
   const generateThumbnail = (pdfUrl: string) => {
@@ -109,7 +140,11 @@ const PDFResult = ({
       <div className="p-4 flex-1">
         <h3 className="font-medium text-lg mb-2">{title}</h3>
         <p className="text-sm text-gray-600 line-clamp-2">{snippet}</p>
-        <RelevancyInfo totalPages={totalPages} relevantPages={relevantPages} />
+        <RelevancyInfo
+          totalPages={totalPages}
+          relevantPages={derivedRelevancy}
+          pageNumbers={pageNumbers}
+        />
 
         <div className="mt-4 flex gap-2">
           <a

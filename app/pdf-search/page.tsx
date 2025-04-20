@@ -1,24 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SearchBar } from "@/components/SearchBar";
 import { PDFSearchResults } from "@/components/PDFSearchResults";
-import { processQuery, PDFSearchResult } from "@/actions/search";
+import {
+  processQuery,
+  PDFSearchResult,
+  getRecentSearches,
+} from "@/actions/search";
+
+interface PDFResultProps {
+  title: string;
+  url: string;
+  snippet: string;
+  totalPages?: number;
+  relevantPages: {
+    pageNumber: number;
+    pageContent: string;
+    score: number;
+    metadata: {
+      "loc.lines.from": number;
+      "loc.lines.to": number;
+      "loc.pageNumber": number;
+    };
+  }[];
+  thumbnail?: string;
+}
 
 export default function PDFSearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [results, setResults] = useState<
-    {
-      title: string;
-      url: string;
-      snippet: string;
-      totalPages?: number;
-      relevantPages?: { startPage: number; endPage: number };
-    }[]
-  >([]);
+  const [results, setResults] = useState<PDFResultProps[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+
+  // Load recent searches from server when component mounts
+  useEffect(() => {
+    const loadRecentSearches = async () => {
+      try {
+        const recentSearches = await getRecentSearches(5);
+        if (recentSearches.length > 0) {
+          setSearchHistory(recentSearches);
+        }
+      } catch (err) {
+        console.error("Error loading recent searches:", err);
+      }
+    };
+
+    loadRecentSearches();
+  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,47 +59,41 @@ export default function PDFSearchPage() {
       setIsSearching(true);
       setError(null);
 
-      // Add to search history if not already present
-      if (!searchHistory.includes(searchQuery)) {
-        setSearchHistory((prev) => [searchQuery, ...prev.slice(0, 4)]);
-      }
-
       try {
         // Call the processQuery function (server action)
         const searchResults = await processQuery(searchQuery);
-        const formattedResults = searchResults.map((result, index) => {
-          // Extract metadata from the document using the correct structure
-          const metadata = result.metadata;
-          const totalPagesCount = metadata["pdf.totalPages"] || 0;
-          const currentPage = metadata["loc.pageNumber"] || 1;
-          const pdfUrl = metadata.pdfUrl || metadata.source || "";
 
-          // Create a title from the URL if no title is available
-          const fileName = pdfUrl.split("/").pop() || "Document";
-          const title = fileName.replace(/\.pdf$/i, "").replace(/-|_/g, " ");
+        // After search completes, refresh the recent searches list
+        const recentSearches = await getRecentSearches(5);
+        setSearchHistory(recentSearches);
 
-          // For demo purposes, create relevantPages for some results
-          let relevantPages;
-          if (index % 3 !== 0) {
-            // Skip every third item to show "checking relevancy" state
-            // Use the actual page info if available
-            const startPage = currentPage;
-            // Create a reasonable range based on current page, making sure we don't exceed total pages
-            const endPage = Math.min(
-              totalPagesCount,
-              startPage + Math.floor(Math.random() * 5)
+        if (searchResults.length === 0) {
+          setResults([]);
+          return;
+        }
+
+        // Map the results to the format expected by PDFSearchResults
+        const formattedResults = searchResults.map(
+          (result: PDFSearchResult) => {
+            // Find the highest page number for totalPages
+            const pageNumbers = result.relevantPages.map(
+              (page) => page.pageNumber
             );
-            relevantPages = { startPage, endPage };
-          }
+            const maxPage = Math.max(...pageNumbers);
 
-          return {
-            title: title,
-            url: pdfUrl,
-            snippet: result.pageContent,
-            totalPages: totalPagesCount,
-            relevantPages: relevantPages,
-          };
-        });
+            // Use totalPages from the first page's metadata if available
+            const totalPages = result.relevantPages[0]?.totalPages || maxPage;
+
+            return {
+              title: result.title,
+              url: result.pdfUrl,
+              snippet: result.snippet,
+              thumbnail: result.thumbnail,
+              totalPages,
+              relevantPages: result.relevantPages,
+            };
+          }
+        );
 
         setResults(formattedResults);
       } catch (err) {

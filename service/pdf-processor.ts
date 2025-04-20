@@ -88,12 +88,16 @@ export class PDFProcessor {
     return documents.map(([doc, score]) => ({
       pageContent: doc.pageContent,
       metadata: {
-        "loc.lines.from": doc.metadata.loc.lines.from,
-        "loc.lines.to": doc.metadata.loc.lines.to,
-        "loc.pageNumber": doc.metadata.loc.pageNumber,
-        "pdf.totalPages": doc.metadata.pdf.totalPages,
-        pdfUrl: doc.metadata.pdfUrl,
-        source: doc.metadata.source,
+        "loc.lines.from":
+          doc.metadata["loc.lines.from"] ?? doc.metadata.loc.lines.from,
+        "loc.lines.to":
+          doc.metadata["loc.lines.to"] ?? doc.metadata.loc.lines.to,
+        "loc.pageNumber":
+          doc.metadata["loc.pageNumber"] ?? doc.metadata.loc.pageNumber,
+        "pdf.totalPages":
+          doc.metadata["pdf.totalPages"] ?? doc.metadata.pdf.totalPages,
+        pdfUrl: doc.metadata["pdfUrl"] ?? doc.metadata.pdfUrl,
+        source: doc.metadata["source"] ?? doc.metadata.source,
       },
       score: score,
       thumbnail: pdf.thumbnail,

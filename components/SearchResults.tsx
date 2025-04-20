@@ -1,4 +1,4 @@
-import { SearchResultType } from '@/types';
+import { SearchResultType } from "@/types";
 
 // PagesPill component
 const PagesPill = ({ totalPages }: { totalPages: number }) => {
@@ -10,7 +10,13 @@ const PagesPill = ({ totalPages }: { totalPages: number }) => {
 };
 
 // RelevancyInfo component
-const RelevancyInfo = ({ totalPages, relevantPages }: { totalPages: number; relevantPages?: { startPage: number; endPage: number } }) => {
+const RelevancyInfo = ({
+  totalPages,
+  relevantPages,
+}: {
+  totalPages: number;
+  relevantPages?: { startPage: number; endPage: number };
+}) => {
   if (!relevantPages) {
     return (
       <div className="flex items-center gap-1 text-sm text-gray-500 mt-2">
@@ -21,28 +27,35 @@ const RelevancyInfo = ({ totalPages, relevantPages }: { totalPages: number; rele
   }
 
   const range = relevantPages.endPage - relevantPages.startPage + 1;
-  if (range === totalPages) {
-    return (
-      <div className="text-sm text-gray-500 mt-2">
-        All pages are relevant
-      </div>
-    );
-  }
+  // if (range === totalPages) {
+  //   return (
+  //     <div className="text-sm text-gray-500 mt-2">
+  //       All pages are relevant
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="text-sm text-gray-500 mt-2">
-      {range} relevant pages from page {relevantPages.startPage} - {relevantPages.endPage}
+      {range} relevant pages from page {relevantPages.startPage} -{" "}
+      {relevantPages.endPage}
     </div>
   );
 };
 
 // Individual search result component
-const SearchResult = ({ title, description, image, totalPages, relevantPages }: SearchResultType) => {
+const SearchResult = ({
+  title,
+  description,
+  image,
+  totalPages,
+  relevantPages,
+}: SearchResultType) => {
   return (
     <div className="flex flex-col sm:flex-row border rounded-lg overflow-hidden mb-4 bg-white">
       <div className="w-full sm:w-1/4 relative">
         <div className="w-full h-[160px]">
-          <img 
+          <img
             src={image}
             alt={title}
             className="w-full h-full object-cover object-[top_left]"
@@ -66,10 +79,7 @@ export const SearchResults = ({ results }: { results: SearchResultType[] }) => {
       <h2 className="text-xl font-medium mb-4">Results</h2>
       <div>
         {results.map((result) => (
-          <SearchResult
-            key={result.id}
-            {...result}
-          />
+          <SearchResult key={result.id} {...result} />
         ))}
       </div>
     </div>
